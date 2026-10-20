@@ -1,0 +1,32 @@
+[project]
+name = "samplebuddy"
+version = "0.1.0"
+description = "Drop in tracks, get them back named with BPM and key, plus studio-ready stems (vocals, drums, bass, other, instrumental)."
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "audio-separator[cpu]>=0.47,<0.48",
+    "essentia>=2.1b6.dev1389",
+    "mutagen>=1.47",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "platformdirs>=4",
+    # audio-separator imports these but does not declare them (audioread) / Python 3.13 removed them
+    "audioread>=3",
+    "standard-aifc; python_version >= '3.13'",
+    "standard-sunau; python_version >= '3.13'",
+]
+
+[project.scripts]
+samplebuddy = "samplebuddy.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
