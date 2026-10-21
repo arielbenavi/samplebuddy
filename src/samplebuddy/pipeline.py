@@ -24,6 +24,18 @@ class Options:
     force: bool = False
 
 
+class Cancelled(Exception):
+    """Raised from emit() by a caller that wants the job stopped at the next event."""
+
+
+def parse_bpm_range(value):
+    """"65-150" or [65, 150] -> (65.0, 150.0)."""
+    lo, hi = (float(x) for x in (value.split("-") if isinstance(value, str) else value))
+    if not 0 < lo < hi:
+        raise ValueError(f"bad tempo range {value!r}; use e.g. 65-150")
+    return lo, hi
+
+
 def collect(paths, emit):
     files = []
     for p in paths:
@@ -39,9 +51,10 @@ def collect(paths, emit):
     return files
 
 
-def run(inputs, opts: Options, emit, get_splitter, cancelled=lambda: False):
+def run(inputs, opts: Options, emit, get_splitter):
     """Process one job. get_splitter() returns a StemSplitter (the caller owns its lifetime,
-    so a service can keep models loaded between jobs). Returns (failed_count, had_any_input)."""
+    so a service can keep models loaded between jobs). emit may raise Cancelled to stop early.
+    Returns (failed_count, had_any_input)."""
     links = [i for i in inputs if fetch.is_link(i)]
     files = collect([i for i in inputs if not fetch.is_link(i)], emit)
     failed = 0
@@ -72,8 +85,6 @@ def run(inputs, opts: Options, emit, get_splitter, cancelled=lambda: False):
     from . import analyze
     ready = []
     for f in files:
-        if cancelled():
-            return failed, True
         d, base = os.path.split(f)
         stem, ext = os.path.splitext(base)
         prior = naming.parse_prefix(stem)
@@ -116,11 +127,11 @@ def run(inputs, opts: Options, emit, get_splitter, cancelled=lambda: False):
     emit("progress", file=todo[0][0], phase="loading models")
     splitter = get_splitter()
     for i, (f, out, stem) in enumerate(todo, 1):
-        if cancelled():
-            break
         try:
             written = splitter.split(f, out, stem, on_phase=lambda ph, f=f: emit("progress", file=f, phase=ph))
             emit("stems", file=f, dir=out, files=written, index=i, total=len(todo))
+        except Cancelled:
+            raise
         except Exception as e:
             failed += 1
             emit("error", file=f, reason=f"separation failed: {e}")

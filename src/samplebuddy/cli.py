@@ -2,6 +2,7 @@
 
     samplebuddy track.flac other.wav some_folder/ [--no-stems] [--key camelot]
     samplebuddy https://example.com/track/...   (needs a configured fetcher, see fetch.py)
+    samplebuddy serve                           (the shared local engine service, see server.py)
 
 Each track is renamed in place to "<BPM> BPM <Key> - <name>" (skipped if already prefixed)
 and gets a "<new name> [Stems]/" folder next to it. Re-running is safe: finished work is skipped."""
@@ -15,6 +16,10 @@ from .pipeline import collect, default_model_dir  # noqa: F401  (kept for import
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["serve"] and not os.path.exists("serve"):
+        from . import server
+        return server.main(argv[1:])
     ap = argparse.ArgumentParser(prog="samplebuddy", description=__doc__.splitlines()[0])
     ap.add_argument("inputs", nargs="+", help="audio files, folders (not recursed) or links")
     ap.add_argument("--out", default=os.path.expanduser("~/Downloads"),
@@ -29,7 +34,10 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="emit one JSON event per line (for GUIs/scripts)")
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args(argv)
-    lo, hi = (float(x) for x in args.bpm_range.split("-"))
+    try:
+        lo, hi = pipeline.parse_bpm_range(args.bpm_range)
+    except ValueError as e:
+        ap.error(str(e))
 
     def emit(event, **kw):
         if args.json:

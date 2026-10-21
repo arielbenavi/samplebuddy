@@ -28,10 +28,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        // Don't leave a 5-minute separation running in the background
-        MainActor.assumeIsolated {
-            queue?.jobs.forEach { $0.process?.terminate() }
-        }
-    }
+    // Quitting leaves the engine service running so queued jobs finish; it exits on its own
+    // once it has been idle with no client connected (Engine.idleExitSeconds).
 }
