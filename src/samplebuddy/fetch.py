@@ -43,11 +43,16 @@ def fetch(urls, out_dir, on_log=lambda line: None):
     proc = subprocess.Popen([os.path.expanduser(cmd), out_dir, *urls], stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, bufsize=1)
     files = []
-    for line in proc.stdout:
-        line = line.rstrip("\n")
-        if line and os.path.isfile(line):
-            files.append(line)
-        elif line.strip():
-            on_log(line)
-    proc.wait()
+    try:
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if line and os.path.isfile(line):
+                files.append(line)
+            elif line.strip():
+                on_log(line)
+    except BaseException:  # e.g. the job was cancelled from on_log
+        proc.kill()
+        raise
+    finally:
+        proc.wait()
     return files

@@ -20,7 +20,20 @@ Status as of 2026-10-20. Covers what was built, how each piece held up on real t
                        "<name> [Stems]/<name> (Vocals|Drums|Bass|Other|Instrumental).flac"
 ```
 
-- **SampleBuddy** (this repo) is the engine (`samplebuddy` CLI) plus a SwiftUI Mac app in `app/`. Links go through a user-configured fetcher, so the repo ships no downloader.
+- **SampleBuddy** (this repo) is the engine (`samplebuddy`) plus a SwiftUI Mac app in `app/`. Links go through a user-configured fetcher, so the repo ships no downloader.
+- **One engine, thin clients.** The engine runs as a local background service (`samplebuddy serve`, 127.0.0.1 only). Clients never load models themselves:
+
+```
+  SampleBuddy.app ──┐   HTTP: submit / list / cancel        ┌─ queue.json (survives restarts)
+                    ├─► GET /capabilities ─► samplebuddy ───┤  one job at a time
+  VST3/AU (future,  │   SSE: /events (the --json events)    │  StemSplitter loaded once
+  JUCE) ────────────┘                                       └─ pipeline.run (same code as the CLI)
+```
+
+  - `pipeline.run` is the per-job pipeline (fetch, analyze, rename, tag, split). The CLI and the service both call it, so `samplebuddy track.flac` still works standalone.
+  - There's one shared, persisted queue. A job dropped in the app shows up in a plugin's list and the other way round, and a crash or restart re-queues the interrupted job.
+  - `GET /capabilities` lists the stems and options (with types, defaults and choices), so a client can build its settings UI from it instead of hard-coding them.
+  - The Mac app starts the service if nothing answers and keeps its list in sync through the event stream. The service quits after 15 idle minutes with no client connected, which frees the ~2 GB the models hold.
 - **Downloader**: none. A fetcher is any program you configure yourself (see the README). See §4 for why.
 
 ## 2. Technology choices and how they held up
@@ -89,7 +102,7 @@ The pitch is "crate prep": drop tracks in and get flip-ready material back. It's
    - it installs the engine with uv on first launch instead of bundling it. Bundling torch and the models means a 1.5–2.5 GB .app plus the Roformer license problem.
    - It needs an Apple Developer account ($99/yr) for signing and notarization, or users hit Gatekeeper warnings.
 4. **DAW plugin later, as a thin companion only.**
-   - A Loopcloud/Splice-style VST3/AU (JUCE) could hold the link box, the queue and drag-out tiles. It would send jobs to the same local engine (`--json` today, or a localhost API later).
+   - A Loopcloud/Splice-style VST3/AU (JUCE) could hold the link box, the queue and drag-out tiles. It talks to the same `samplebuddy serve` API as the Mac app (JUCE's `URL`/`WebInputStream` covers HTTP and the SSE stream), reads `server.json` for the port, and builds its settings from `/capabilities`.
    - Never load torch or models inside the DAW process: a crash or 2 GB of RAM would take the user's session down with it.
    - FL Studio's Python API covers MIDI controllers and the piano roll only, so FL-native scripting is no route.
    - It's weeks of C++ plus signing for 3 plugin formats. Build it only once the app shows people want this inside the DAW.
@@ -116,4 +129,5 @@ The pitch is "crate prep": drop tracks in and get flip-ready material back. It's
    - Optionally detect downbeats and write a beat-grid or cue file.
 4. **Speed:** Tune Roformer overlap and segment size (overlap 4 is about 2× faster at a small quality cost). Optional cloud GPU.
 5. **Mac app polish:** an app icon, a watched Inbox folder, first-launch engine install, and notarization.
+   - Cancelling a running job takes effect at the next phase (the Roformer pass alone is ~4 min). Faster cancel needs the separator to check a flag between chunks.
 6. **Linux/Windows:** CUDA works through audio-separator's `[gpu]` extra. Only CI is needed.
